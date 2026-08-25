@@ -1,0 +1,12 @@
+{
+  "temperature_celsius": -50.0,
+  "time_elapsed_seconds": 45.0,
+  "master_key_bits": 128,
+  "test_hex_key": "2b7e151628aed2a6abf7158809cf4f3c",
+  "has_tresor": false,
+  "has_tme": false,
+  "has_mor": true,
+  "has_tamper": false,
+  "has_secure_boot": true,
+  "ram_type": "DDR4"
+}

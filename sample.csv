@@ -1,0 +1,5 @@
+temperature_celsius,time_elapsed_seconds,master_key_bits,test_hex_key,has_tresor,has_tme,has_mor,has_tamper,has_secure_boot,ram_type
+25.0,5.0,128,2b7e151628aed2a6abf7158809cf4f3c,false,false,false,false,true,DDR4
+-50.0,60.0,128,2b7e151628aed2a6abf7158809cf4f3c,false,false,true,false,true,DDR4
+-196.0,300.0,256,603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4,true,true,true,true,true,DDR5
+4.0,15.0,128,00112233445566778899aabbccddeeff,false,true,false,false,true,LPDDR5
