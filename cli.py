@@ -6,8 +6,10 @@ Supports interactive execution, CLI parameters, synthetic key decay, CSV batch a
 
 import argparse
 import json
+import csv
 import sys
 import os
+from typing import Optional
 from pathlib import Path
 
 # Add parent directory to path if needed
@@ -134,15 +136,84 @@ def run_interactive_mode() -> SimulationReport:
     )
 
 
+def run_batch(input_path: str, output_path: Optional[str] = None, as_json: bool = False):
+    """Process a batch CSV file and optionally save to an output file."""
+    if not os.path.exists(input_path):
+        print(f"Error: CSV file '{input_path}' not found.", file=sys.stderr)
+        sys.exit(1)
+    with open(input_path, "r", encoding="utf-8") as f:
+        csv_text = f.read()
+    reports = ColdBootRemanenceEngine.evaluate_batch_csv(csv_text)
+
+    if output_path:
+        # Write CSV output containing key simulation outcomes
+        fieldnames = [
+            "simulation_id",
+            "temperature_celsius",
+            "time_elapsed_seconds",
+            "time_constant_tau_seconds",
+            "half_life_seconds",
+            "retention_fraction",
+            "expected_bit_error_rate",
+            "reconstruction_window_seconds",
+            "master_key_bits",
+            "shannon_entropy_per_bit",
+            "effective_security_bits",
+            "reconstruction_complexity_tier",
+            "estimated_search_complexity_log2",
+            "defense_score_percentage",
+            "threat_level",
+        ]
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for rep in reports:
+                writer.writerow({
+                    "simulation_id": rep.simulation_id,
+                    "temperature_celsius": rep.thermal_profile.temperature_celsius,
+                    "time_elapsed_seconds": rep.thermal_profile.time_elapsed_seconds,
+                    "time_constant_tau_seconds": rep.thermal_profile.time_constant_tau_seconds,
+                    "half_life_seconds": rep.thermal_profile.half_life_seconds,
+                    "retention_fraction": rep.thermal_profile.retention_fraction,
+                    "expected_bit_error_rate": rep.thermal_profile.expected_bit_error_rate,
+                    "reconstruction_window_seconds": rep.thermal_profile.reconstruction_window_seconds,
+                    "master_key_bits": rep.entropy_metrics.master_key_bits,
+                    "shannon_entropy_per_bit": rep.entropy_metrics.shannon_entropy_per_bit,
+                    "effective_security_bits": rep.entropy_metrics.effective_security_bits,
+                    "reconstruction_complexity_tier": rep.entropy_metrics.reconstruction_complexity_tier,
+                    "estimated_search_complexity_log2": rep.entropy_metrics.estimated_search_complexity_log2,
+                    "defense_score_percentage": rep.countermeasure.defense_score_percentage,
+                    "threat_level": rep.countermeasure.threat_level,
+                })
+        print(f"Batch audit completed for {len(reports)} records. Output written to: {output_path}")
+    else:
+        if as_json:
+            print(json.dumps([r.to_dict() for r in reports], indent=2))
+        else:
+            for rep in reports:
+                print(format_report_text(rep))
+                print("\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Cold Boot Attack DRAM Remanence & Key Recovery Defense Analyzer",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
+    subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
+
+    # Batch subcommand
+    batch_parser = subparsers.add_parser("batch", help="Run batch audit on a CSV dataset")
+    batch_parser.add_argument("-i", "--input", required=True, help="Path to input CSV file")
+    batch_parser.add_argument("-o", "--output", help="Path to output CSV results file")
+    batch_parser.add_argument("--json", action="store_true", help="Output results in structured JSON format (if no -o)")
+
+    # Root flags for single evaluation or direct batch via --csv
     parser.add_argument("-i", "--interactive", action="store_true", help="Launch interactive parameter evaluation mode")
     parser.add_argument("--json", action="store_true", help="Output results in structured JSON format")
     parser.add_argument("--csv", type=str, help="Path to batch CSV file containing simulation parameters")
+    parser.add_argument("-o", "--output", type=str, help="Path to output CSV results file (when using --csv)")
 
     # Direct CLI Simulation Arguments
     parser.add_argument("--temp", "--temperature", type=float, default=25.0, help="DRAM temperature in Celsius (+25, -50, -196)")
@@ -158,19 +229,12 @@ def main():
 
     args = parser.parse_args()
 
+    if args.subcommand == "batch":
+        run_batch(input_path=args.input, output_path=args.output, as_json=args.json)
+        return
+
     if args.csv:
-        if not os.path.exists(args.csv):
-            print(f"Error: CSV file '{args.csv}' not found.", file=sys.stderr)
-            sys.exit(1)
-        with open(args.csv, "r", encoding="utf-8") as f:
-            csv_text = f.read()
-        reports = ColdBootRemanenceEngine.evaluate_batch_csv(csv_text)
-        if args.json:
-            print(json.dumps([r.to_dict() for r in reports], indent=2))
-        else:
-            for rep in reports:
-                print(format_report_text(rep))
-                print("\n")
+        run_batch(input_path=args.csv, output_path=args.output, as_json=args.json)
         return
 
     if args.interactive:

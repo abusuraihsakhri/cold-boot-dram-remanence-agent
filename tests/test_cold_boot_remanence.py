@@ -9,6 +9,9 @@ countermeasure defense evaluation, and CSV batch processing.
 import unittest
 import json
 import math
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from cold_boot_remanence import (
     ColdBootRemanenceEngine,
     ThermalDecayProfile,
@@ -261,6 +264,28 @@ class TestSerializationAndBatchCSV(unittest.TestCase):
             time_elapsed_seconds=0.0
         )
         self.assertEqual(res["flipped_bits"], 0)
+
+
+    def test_cli_batch_subcommand_execution(self):
+        import subprocess
+        out_test_csv = Path(__file__).parent.parent / "out_test.csv"
+        sample_csv = Path(__file__).parent.parent / "sample.csv"
+        try:
+            res = subprocess.run(
+                [sys.executable, "cli.py", "batch", "-i", str(sample_csv), "-o", str(out_test_csv)],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            self.assertIn("Batch audit completed", res.stdout)
+            self.assertTrue(out_test_csv.exists())
+            with open(out_test_csv, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("simulation_id", content)
+            self.assertIn("reconstruction_complexity_tier", content)
+        finally:
+            if out_test_csv.exists():
+                out_test_csv.unlink()
 
 
 if __name__ == "__main__":
