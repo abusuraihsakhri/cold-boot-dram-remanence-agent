@@ -1,27 +1,34 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cold-boot-dram-remanence-engine"
-version = "2.0.0"
-description = "Cold-Boot Attack DRAM Remanence & Key Recovery Defense Engine"
+version = "2.1.0"
+description = "Illustrative DRAM remanence risk simulator and defensive-control review tool"
 readme = "README.md"
-authors = [{ name = "Dr. Abu Suraih Sakhri", email = "abusuraih@example.com" }]
-license = { text = "MIT" }
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Topic :: Security/Cryptography",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-]
-requires-python = ">=3.9"
+authors = [{ name = "Abu Suraih Sakhri" }]
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
 dependencies = []
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Security :: Cryptography",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
 
 [project.scripts]
 cold-boot-dram-remanence-engine = "cold_boot_defense.cli:main"
+cold-boot-remanence = "cold_boot_defense.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/abusuraihsakhri/cold-boot-dram-remanence-engine"
-Repository = "https://github.com/abusuraihsakhri/cold-boot-dram-remanence-engine.git"
+Homepage = "https://abusuraihsakhri.github.io/cold-boot-dram-remanence-agent/"
+Repository = "https://github.com/abusuraihsakhri/cold-boot-dram-remanence-agent"
+
+[tool.setuptools]
+packages = ["cold_boot_defense"]
+py-modules = ["cold_boot_remanence", "cli"]
