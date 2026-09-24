@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>DRAM Remanence Risk Simulator</title>
+  <meta name="description" content="Illustrative DRAM remanence and defensive-control simulator.">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Hardware security · educational model</p>
+        <h1>DRAM Remanence Risk Simulator</h1>
+        <p class="subtitle">Explore an illustrative temperature/time decay model and compare defensive controls. Results are not hardware-specific predictions.</p>
+      </div>
+      <button id="themeToggle" class="icon-button" type="button" aria-label="Toggle color theme">◐</button>
+    </header>
+    <section class="workspace" aria-label="Simulator">
+      <form id="simForm" class="panel controls">
+        <div class="section-head"><h2>Scenario</h2><button type="submit" class="primary">Analyze</button></div>
+        <div class="grid fields">
+          <label>Temperature (°C)<input id="temp" type="number" step="0.1" min="-273.14" value="25"></label>
+          <label>Elapsed time (s)<input id="elapsed" type="number" step="0.1" min="0" value="10"></label>
+          <label>Key size<select id="keyBits"><option>128</option><option>192</option><option>256</option></select></label>
+          <label>RAM type<select id="ramType"><option>DDR4</option><option>DDR5</option><option>LPDDR5</option><option>DDR3</option></select></label>
+        </div>
+        <fieldset><legend>Defensive controls</legend><div class="checks">
+          <label><input id="tresor" type="checkbox"> CPU-resident key storage</label>
+          <label><input id="tme" type="checkbox"> Hardware memory encryption</label>
+          <label><input id="mor" type="checkbox"> Firmware memory overwrite</label>
+          <label><input id="tamper" type="checkbox"> Tamper response</label>
+          <label><input id="secureBoot" type="checkbox" checked> Verified boot policy</label>
+        </div></fieldset>
+        <p id="error" class="error" role="alert" hidden></p>
+      </form>
+      <section class="panel results" aria-live="polite">
+        <div class="section-head"><h2>Results</h2><span id="band" class="badge">—</span></div>
+        <div class="metrics">
+          <article><span>Retention</span><strong id="retention">—</strong></article>
+          <article><span>Expected BER</span><strong id="ber">—</strong></article>
+          <article><span>Residual uncertainty</span><strong id="uncertainty">—</strong></article>
+          <article><span>Control score</span><strong id="defense">—</strong></article>
+        </div>
+        <div class="detail-grid">
+          <div><span>Model τ</span><strong id="tau">—</strong></div>
+          <div><span>15% BER window</span><strong id="window">—</strong></div>
+          <div><span>Retained information</span><strong id="retainedBits">—</strong></div>
+          <div><span>Control band</span><strong id="controlBand">—</strong></div>
+        </div>
+        <p class="note">The decay constants and score weights are explicit modeling assumptions. Real DRAM remanence depends on device, platform, thermal history, refresh behavior, and acquisition method.</p>
+      </section>
+    </section>
+    <footer><a href="https://github.com/abusuraihsakhri/cold-boot-dram-remanence-agent">Source and methodology</a><span>Runs locally in your browser; no data is uploaded.</span></footer>
+  </main>
+</body>
+</html>
