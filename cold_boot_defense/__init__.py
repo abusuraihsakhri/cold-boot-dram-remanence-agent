@@ -1,15 +1,13 @@
-"""
-Cold Boot Attack DRAM Remanence & Key Recovery Defense Package
-"""
+"""Public package interface for the DRAM remanence risk simulator."""
 from cold_boot_remanence import (
     ColdBootRemanenceEngine,
-    ThermalDecayProfile,
-    KeyEntropyMetrics,
     CountermeasureAssessment,
+    KeyEntropyMetrics,
     SimulationReport,
+    ThermalDecayProfile,
 )
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __all__ = [
     "ColdBootRemanenceEngine",
     "ThermalDecayProfile",
