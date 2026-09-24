@@ -1,208 +1,196 @@
 #!/usr/bin/env python3
-"""
-Cold Boot DRAM Remanence & Key Recovery Defense Engine
-------------------------------------------------------
-Physics-based modeling of DRAM capacitor charge decay, temperature-dependent
-data remanence (Arrhenius model), ground-state decay asymmetry, Shannon entropy
-loss, and AES key schedule error correction feasibility (Halderman et al.).
+"""Illustrative DRAM remanence risk model and defensive posture assessment.
 
-Domain: Hardware Security & Applied Cryptography
-Pure Python Standard Library (no external dependencies required).
+The thermal model is intentionally simple. Its default parameters are calibration
+assumptions for demonstration and testing; they are not universal DRAM constants
+and must not be interpreted as hardware-specific retention predictions.
 """
 
-from dataclasses import dataclass, field, asdict
-from typing import Dict, Any, List, Optional, Tuple, Union
-import math
-import json
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional
 import csv
+import datetime as _datetime
 import io
-import sys
+import json
+import math
 import random
-import binascii
+import uuid
+
+BOLTZMANN_CONSTANT_EV = 8.617333262145e-5
+SILICON_ACTIVATION_ENERGY_EV = 0.65
+ROOM_TEMP_KELVIN = 298.15
+ROOM_TEMP_TAU_SECONDS = 2.5
+ABSOLUTE_ZERO_CELSIUS = -273.15
+MAX_ARRHENIUS_EXPONENT = 60.0
+MODEL_ASSUMPTION_NOTE = (
+    "Illustrative exponential/Arrhenius-style decay model. The default tau and activation "
+    "energy are modeling assumptions, not validated constants for a specific DRAM device."
+)
 
 
-# Physical constants
-BOLTZMANN_CONSTANT_EV = 8.617333262145e-5  # eV/K
-SILICON_ACTIVATION_ENERGY_EV = 0.65  # eV (DRAM junction/subthreshold leakage activation energy)
-ROOM_TEMP_KELVIN = 298.15  # +25 °C
-ROOM_TEMP_TAU_SECONDS = 2.5  # Typical room temp retention time constant tau_0
+def _finite_float(value: float, name: str) -> float:
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number")
+    return value
+
+
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y", "on"}:
+        return True
+    if text in {"false", "0", "no", "n", "off", "", "none"}:
+        return False
+    raise ValueError(f"invalid boolean value: {value!r}")
 
 
 @dataclass
 class ThermalDecayProfile:
-    """Calculated thermal decay kinetics and remanence parameters."""
     temperature_celsius: float
     temperature_kelvin: float
     time_elapsed_seconds: float
     time_constant_tau_seconds: float
     half_life_seconds: float
-    retention_fraction: float  # Fraction of initial charge/signal remaining (0.0 to 1.0)
-    expected_bit_error_rate: float  # Expected BER across random data (0.0 to 0.50)
-    reconstruction_window_seconds: float  # Time until BER exceeds feasibility threshold (BER > 0.15)
+    retention_fraction: float
+    expected_bit_error_rate: float
+    reconstruction_window_seconds: float
 
 
 @dataclass
 class KeyEntropyMetrics:
-    """Information-theoretic and cryptographic metrics for decayed keys."""
-    master_key_bits: int  # e.g. 128, 256
+    master_key_bits: int
     decayed_ber: float
-    shannon_entropy_per_bit: float  # H(p)
-    residual_mutual_information: float  # 1 - H(p)
-    effective_security_bits: float  # master_key_bits * (1 - H(p))
-    reconstruction_complexity_tier: str  # 'TRIVIAL', 'EASY', 'FEASIBLE', 'HIGH_INTENSITY', 'INFEASIBLE'
-    estimated_search_complexity_log2: float  # Log2 operations required for reconstruction
+    shannon_entropy_per_bit: float
+    residual_mutual_information: float
+    effective_security_bits: float
+    reconstruction_complexity_tier: str
+    estimated_search_complexity_log2: Optional[float]
+    retained_information_bits: float = 0.0
+    residual_uncertainty_bits: float = 0.0
+    model_warning: str = (
+        "Recovery tier is a qualitative corruption band; no cryptanalytic operation count is predicted."
+    )
 
 
 @dataclass
 class CountermeasureAssessment:
-    """Security defense evaluation against cold boot extraction."""
     system_profile_name: str
-    defense_score_percentage: float  # 0 to 100%
-    threat_level: str  # 'CRITICAL_RISK', 'HIGH_RISK', 'MODERATE_RISK', 'PROTECTED', 'IMMUNE'
+    defense_score_percentage: float
+    threat_level: str
     vulnerabilities_identified: List[str] = field(default_factory=list)
     mitigations_recommended: List[str] = field(default_factory=list)
     hardware_features_active: List[str] = field(default_factory=list)
+    scoring_note: str = (
+        "Defense score is a transparent heuristic for comparing configurations, not a validated risk probability."
+    )
 
 
 @dataclass
 class SimulationReport:
-    """Unified assessment and simulation output report."""
     simulation_id: str
     timestamp_utc: str
     thermal_profile: ThermalDecayProfile
     entropy_metrics: KeyEntropyMetrics
     countermeasure: CountermeasureAssessment
     synthetic_key_decay_results: Optional[Dict[str, Any]] = None
+    model_assumptions: str = MODEL_ASSUMPTION_NOTE
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
     def to_json(self, indent: int = 2) -> str:
-        return json.dumps(self.to_dict(), indent=indent)
+        return json.dumps(self.to_dict(), indent=indent, allow_nan=False)
 
 
 class ColdBootRemanenceEngine:
-    """
-    Algorithmic engine for DRAM data remanence modeling, thermal decay,
-    and cold boot attack vulnerability analysis.
-    """
+    """Educational model for DRAM remanence and defensive configuration review."""
 
     @staticmethod
     def celsius_to_kelvin(celsius: float) -> float:
-        """Convert Celsius to Kelvin with absolute zero clamping."""
-        kelvin = celsius + 273.15
-        if kelvin < 0.001:
-            kelvin = 0.001  # Prevent division by zero at absolute zero
-        return kelvin
+        celsius = _finite_float(celsius, "temperature_celsius")
+        if celsius <= ABSOLUTE_ZERO_CELSIUS:
+            raise ValueError("temperature_celsius must be above absolute zero (-273.15 °C)")
+        return celsius + 273.15
 
     @classmethod
     def calculate_decay_time_constant(cls, temperature_celsius: float) -> float:
-        """
-        Calculate the DRAM discharge time constant tau(T) using the Arrhenius equation:
-        tau(T) = tau_0 * exp((E_a / k_B) * (1/T - 1/T_0))
-        """
         kelvin = cls.celsius_to_kelvin(temperature_celsius)
-        
-        # Calculate exponent factor: (E_a / k_B) * (1/T - 1/T_0)
         inv_diff = (1.0 / kelvin) - (1.0 / ROOM_TEMP_KELVIN)
         exponent = (SILICON_ACTIVATION_ENERGY_EV / BOLTZMANN_CONSTANT_EV) * inv_diff
-        
-        # Clamp exponent to prevent floating point overflow in cryogenic temperatures
-        if exponent > 60.0:
-            exponent = 60.0
-        elif exponent < -20.0:
-            exponent = -20.0
-
-        tau = ROOM_TEMP_TAU_SECONDS * math.exp(exponent)
-        return tau
+        exponent = min(max(exponent, -20.0), MAX_ARRHENIUS_EXPONENT)
+        return ROOM_TEMP_TAU_SECONDS * math.exp(exponent)
 
     @classmethod
-    def compute_thermal_profile(cls, temperature_celsius: float, time_elapsed_seconds: float) -> ThermalDecayProfile:
-        """
-        Compute retention fraction R(t, T) and expected bit error rate over elapsed time.
-        """
-        t_kelvin = cls.celsius_to_kelvin(temperature_celsius)
+    def compute_thermal_profile(
+        cls, temperature_celsius: float, time_elapsed_seconds: float
+    ) -> ThermalDecayProfile:
+        temperature_celsius = _finite_float(temperature_celsius, "temperature_celsius")
+        time_elapsed_seconds = _finite_float(time_elapsed_seconds, "time_elapsed_seconds")
+        if time_elapsed_seconds < 0:
+            raise ValueError("time_elapsed_seconds must be >= 0")
+
+        kelvin = cls.celsius_to_kelvin(temperature_celsius)
         tau = cls.calculate_decay_time_constant(temperature_celsius)
         half_life = tau * math.log(2.0)
-
-        # Fraction of retained charge / uncorrupted signal: R(t) = exp(-t / tau)
-        if tau > 0:
-            decay_ratio = time_elapsed_seconds / tau
-            retention = math.exp(-min(decay_ratio, 50.0))
-        else:
-            retention = 0.0
-
-        # Unidirectional ground state bit decay:
-        # Expected BER for random bits = 0.5 * (1 - exp(-t / tau))
+        decay_ratio = time_elapsed_seconds / tau
+        retention = math.exp(-min(decay_ratio, 50.0))
         ber = 0.5 * (1.0 - retention)
-        ber = min(max(ber, 0.0), 0.50)
-
-        # Time until BER reaches 0.15 (15% reconstructability threshold):
-        # 0.15 = 0.5 * (1 - exp(-t / tau)) => 0.30 = 1 - exp(-t/tau) => exp(-t/tau) = 0.70 => t = -tau * ln(0.70)
         reconstruction_window = -tau * math.log(0.70)
 
         return ThermalDecayProfile(
             temperature_celsius=round(temperature_celsius, 2),
-            temperature_kelvin=round(t_kelvin, 2),
+            temperature_kelvin=round(kelvin, 2),
             time_elapsed_seconds=round(time_elapsed_seconds, 2),
             time_constant_tau_seconds=round(tau, 3),
             half_life_seconds=round(half_life, 3),
             retention_fraction=round(retention, 5),
-            expected_bit_error_rate=round(ber, 5),
-            reconstruction_window_seconds=round(reconstruction_window, 2)
+            expected_bit_error_rate=round(min(max(ber, 0.0), 0.5), 5),
+            reconstruction_window_seconds=round(reconstruction_window, 2),
         )
 
     @staticmethod
     def calculate_shannon_entropy(ber: float) -> float:
-        """
-        Compute binary Shannon entropy:
-        H(p) = -p * log2(p) - (1-p) * log2(1-p)
-        """
-        if ber <= 0.0 or ber >= 1.0:
+        ber = _finite_float(ber, "ber")
+        if not 0.0 <= ber <= 0.5:
+            raise ValueError("ber must be between 0.0 and 0.5 for this decay model")
+        if ber == 0.0:
             return 0.0
-        if math.isclose(ber, 0.5, abs_tol=1e-7):
+        if math.isclose(ber, 0.5, abs_tol=1e-12):
             return 1.0
-        p = min(max(ber, 1e-12), 1.0 - 1e-12)
-        return -p * math.log2(p) - (1.0 - p) * math.log2(1.0 - p)
+        return -ber * math.log2(ber) - (1.0 - ber) * math.log2(1.0 - ber)
 
     @classmethod
     def evaluate_key_reconstruction(cls, master_key_bits: int, ber: float) -> KeyEntropyMetrics:
-        """
-        Evaluate remaining entropy and algorithmic key schedule reconstruction complexity
-        based on Halderman-Heninger-Shacham algebraic branch-and-bound benchmarks.
-        """
+        if master_key_bits not in {128, 192, 256}:
+            raise ValueError("master_key_bits must be one of 128, 192, or 256")
         h_p = cls.calculate_shannon_entropy(ber)
-        residual_info = max(0.0, 1.0 - h_p)
-        eff_bits = master_key_bits * residual_info
+        retained_fraction = 1.0 - h_p
+        retained_bits = master_key_bits * retained_fraction
+        uncertainty_bits = master_key_bits * h_p
 
-        # AES Key Schedule expansion provides redundancy:
-        # AES-128 has 1408 bits in round keys (11 rounds * 128 bits)
-        # AES-256 has 1920 bits in round keys (15 rounds * 128 bits)
-        # Empirical algorithmic search complexity log2(ops) as a function of BER:
         if ber < 0.02:
-            tier = "TRIVIAL"
-            log2_ops = 5.0  # Instantaneous (< 1 ms)
+            tier = "LOW_CORRUPTION"
         elif ber <= 0.07:
-            tier = "EASY"
-            log2_ops = 14.0  # < 1 second on single CPU core
-        elif ber <= 0.13:
-            tier = "FEASIBLE"
-            log2_ops = 26.0  # Minutes on modern PC
-        elif ber <= 0.20:
-            tier = "HIGH_INTENSITY"
-            log2_ops = 44.0  # GPU/cluster required (hours to days)
+            tier = "MODERATE_CORRUPTION"
+        elif ber <= 0.15:
+            tier = "HIGH_CORRUPTION"
         else:
-            tier = "INFEASIBLE"
-            log2_ops = min(80.0 + (ber - 0.20) * 200.0, float(master_key_bits))
+            tier = "SEVERE_CORRUPTION"
 
         return KeyEntropyMetrics(
             master_key_bits=master_key_bits,
             decayed_ber=round(ber, 5),
             shannon_entropy_per_bit=round(h_p, 4),
-            residual_mutual_information=round(residual_info, 4),
-            effective_security_bits=round(eff_bits, 2),
+            residual_mutual_information=round(retained_fraction, 4),
+            effective_security_bits=round(uncertainty_bits, 2),
             reconstruction_complexity_tier=tier,
-            estimated_search_complexity_log2=round(log2_ops, 1)
+            estimated_search_complexity_log2=None,
+            retained_information_bits=round(retained_bits, 2),
+            residual_uncertainty_bits=round(uncertainty_bits, 2),
         )
 
     @classmethod
@@ -213,74 +201,64 @@ class ColdBootRemanenceEngine:
         time_elapsed_seconds: float,
         preferred_ground_state: int = 0,
         ground_state_asymmetry: float = 0.95,
-        seed: Optional[int] = 42
+        seed: Optional[int] = 42,
     ) -> Dict[str, Any]:
-        """
-        Simulate bitwise DRAM capacitor discharge on a supplied hex key string.
-        Flips bits decaying towards preferred ground state (0 or 1) with physical probability.
-        """
-        if seed is not None:
-            random.seed(seed)
+        if preferred_ground_state not in {0, 1}:
+            raise ValueError("preferred_ground_state must be 0 or 1")
+        ground_state_asymmetry = _finite_float(ground_state_asymmetry, "ground_state_asymmetry")
+        if not 0.0 <= ground_state_asymmetry <= 1.0:
+            raise ValueError("ground_state_asymmetry must be between 0.0 and 1.0")
 
-        # Convert hex string to binary bit array
-        clean_hex = original_hex_key.replace(" ", "").replace("0x", "").strip()
+        clean = str(original_hex_key).replace(" ", "").removeprefix("0x").strip()
+        if not clean:
+            raise ValueError("original_hex_key must not be empty")
         try:
-            key_bytes = bytes.fromhex(clean_hex)
+            key_bytes = bytes.fromhex(clean)
+            input_encoding = "hex"
         except ValueError:
-            # Fallback to UTF-8 bytes if not valid hex
-            key_bytes = clean_hex.encode("utf-8")
-
-        total_bits = len(key_bytes) * 8
-        bit_list = []
-        for byte in key_bytes:
-            for i in range(7, -1, -1):
-                bit_list.append((byte >> i) & 1)
+            key_bytes = clean.encode("utf-8")
+            input_encoding = "utf-8"
 
         profile = cls.compute_thermal_profile(temperature_celsius, time_elapsed_seconds)
         decay_prob = 1.0 - profile.retention_fraction
+        rng = random.Random(seed)
 
-        decayed_bits = []
-        flipped_count = 0
+        bits: List[int] = []
+        for byte in key_bytes:
+            bits.extend((byte >> i) & 1 for i in range(7, -1, -1))
 
-        for b in bit_list:
-            if b != preferred_ground_state:
-                # Bit has charge; probabilistically decays towards preferred ground state
-                if random.random() < (decay_prob * ground_state_asymmetry):
-                    decayed_bits.append(preferred_ground_state)
-                    flipped_count += 1
-                else:
-                    decayed_bits.append(b)
+        decayed: List[int] = []
+        flips = 0
+        for bit in bits:
+            if bit != preferred_ground_state:
+                flip_probability = decay_prob * ground_state_asymmetry
             else:
-                # Bit is already in ground state; very low probability of reverse flip (thermal noise)
-                reverse_noise_prob = decay_prob * (1.0 - ground_state_asymmetry) * 0.1
-                if random.random() < reverse_noise_prob:
-                    decayed_bits.append(1 - preferred_ground_state)
-                    flipped_count += 1
-                else:
-                    decayed_bits.append(b)
+                flip_probability = decay_prob * (1.0 - ground_state_asymmetry) * 0.1
+            if rng.random() < flip_probability:
+                decayed.append(1 - bit)
+                flips += 1
+            else:
+                decayed.append(bit)
 
-        # Reconstruct decayed byte string
-        decayed_byte_list = bytearray()
-        for chunk_idx in range(0, len(decayed_bits), 8):
-            chunk = decayed_bits[chunk_idx:chunk_idx + 8]
-            byte_val = 0
-            for bit in chunk:
-                byte_val = (byte_val << 1) | bit
-            decayed_byte_list.append(byte_val)
+        out = bytearray()
+        for i in range(0, len(decayed), 8):
+            value = 0
+            for bit in decayed[i : i + 8]:
+                value = (value << 1) | bit
+            out.append(value)
 
-        observed_ber = flipped_count / total_bits if total_bits > 0 else 0.0
-        decayed_hex = decayed_byte_list.hex()
-
+        total_bits = len(bits)
         return {
-            "original_hex": clean_hex,
-            "decayed_hex": decayed_hex,
+            "original_hex": clean,
+            "input_encoding": input_encoding,
+            "decayed_hex": out.hex(),
             "total_bits": total_bits,
-            "flipped_bits": flipped_count,
-            "hamming_distance": flipped_count,
-            "empirical_ber": round(observed_ber, 5),
+            "flipped_bits": flips,
+            "hamming_distance": flips,
+            "empirical_ber": round(flips / total_bits, 5),
             "expected_theoretical_ber": profile.expected_bit_error_rate,
-            "decay_temperature_celsius": temperature_celsius,
-            "decay_time_seconds": time_elapsed_seconds
+            "decay_temperature_celsius": profile.temperature_celsius,
+            "decay_time_seconds": profile.time_elapsed_seconds,
         }
 
     @staticmethod
@@ -290,69 +268,53 @@ class ColdBootRemanenceEngine:
         has_power_reset_scrubbing: bool = False,
         has_chassis_tamper_sensor: bool = False,
         has_secure_boot_lockdown: bool = False,
-        ram_type: str = "DDR4"
+        ram_type: str = "DDR4",
     ) -> CountermeasureAssessment:
-        """
-        Evaluate physical and cryptographic defenses against cold boot attack vectors.
-        """
-        defense_score = 0.0
-        vulnerabilities = []
-        mitigations = []
-        active_features = []
+        controls = [
+            (has_tresor_cpu_registers, 30.0, "CPU-resident key storage",
+             "Sensitive key material may reside in DRAM.",
+             "Use a design that minimizes plaintext key residency in DRAM where supported."),
+            (has_total_memory_encryption, 30.0, "Hardware memory encryption",
+             "DRAM contents may be readable without a memory-encryption boundary.",
+             "Enable and verify platform memory encryption when the hardware and threat model support it."),
+            (has_power_reset_scrubbing, 20.0, "Firmware memory overwrite on requested reset paths",
+             "A supported reset path may not scrub memory before third-party code runs.",
+             "Enable and verify firmware memory-overwrite controls such as TCG MOR where applicable."),
+            (has_chassis_tamper_sensor, 10.0, "Tamper response / key invalidation control",
+             "Physical enclosure access may not trigger a security response.",
+             "Use platform-appropriate tamper detection and key invalidation for high-assurance deployments."),
+            (has_secure_boot_lockdown, 10.0, "Verified boot policy",
+             "Boot policy may permit untrusted recovery media on the original platform.",
+             "Enforce a verified boot policy and restrict unauthorized boot paths."),
+        ]
 
-        if has_tresor_cpu_registers:
-            defense_score += 40.0
-            active_features.append("TRESOR/Loop-Amnesia CPU Register Key Storage (Keys never touch DRAM)")
+        score = 0.0
+        vulnerabilities: List[str] = []
+        mitigations: List[str] = []
+        active: List[str] = []
+        for enabled, weight, label, weakness, mitigation in controls:
+            if enabled:
+                score += weight
+                active.append(label)
+            else:
+                vulnerabilities.append(weakness)
+                mitigations.append(mitigation)
+
+        if score >= 80:
+            threat = "STRONG_CONTROLS"
+        elif score >= 50:
+            threat = "PARTIAL_CONTROLS"
         else:
-            vulnerabilities.append("Cryptographic keys resides in plaintext in DRAM address space.")
-            mitigations.append("Implement CPU-register key storage (e.g. debug/AVX registers) for disk encryption master keys.")
+            threat = "LIMITED_CONTROLS"
 
-        if has_total_memory_encryption:
-            defense_score += 35.0
-            active_features.append("Hardware Total Memory Encryption (Intel TME / AMD SME AES-XTS on-the-fly)")
-        else:
-            vulnerabilities.append("Memory bus traffic and RAM cell contents are unencrypted.")
-            mitigations.append("Enable Total Memory Encryption (TME/SME) in BIOS/UEFI firmware.")
-
-        if has_power_reset_scrubbing:
-            defense_score += 15.0
-            active_features.append("BIOS Memory Overwrite Request (MOR / TCG Platform Reset Attack Mitigation)")
-        else:
-            vulnerabilities.append("Firmware does not actively zero RAM buffers during reboot transitions.")
-            mitigations.append("Enforce TCG MOR bit (Memory Overwrite Request) in firmware.")
-
-        if has_chassis_tamper_sensor:
-            defense_score += 10.0
-            active_features.append("Anti-tamper chassis sensor with hardware capacitor discharge circuit")
-        else:
-            vulnerabilities.append("Physical chassis opening does not trigger immediate key erasure.")
-            mitigations.append("Integrate chassis intrusion detection with rapid DRAM rail shorting.")
-
-        if has_secure_boot_lockdown:
-            defense_score += 5.0
-            active_features.append("UEFI Secure Boot (Prevents untrusted USB boot image extraction)")
-        else:
-            vulnerabilities.append("System allows booting unverified external memory dumping OS images.")
-            mitigations.append("Lock down UEFI boot order and enforce Secure Boot with password protection.")
-
-        defense_score = min(defense_score, 100.0)
-
-        if defense_score >= 85.0:
-            threat = "PROTECTED"
-        elif defense_score >= 60.0:
-            threat = "MODERATE_RISK"
-        elif defense_score >= 30.0:
-            threat = "HIGH_RISK"
-        else:
-            threat = "CRITICAL_RISK"
-
+        ram_label = str(ram_type).strip() or "Unknown"
         return CountermeasureAssessment(
-            system_profile_name=f"{ram_type}-System-Audit",
-            defense_score_percentage=round(defense_score, 1),
+            system_profile_name=f"{ram_label}-System-Audit",
+            defense_score_percentage=round(score, 1),
             threat_level=threat,
             vulnerabilities_identified=vulnerabilities,
             mitigations_recommended=mitigations,
-            hardware_features_active=active_features
+            hardware_features_active=active,
         )
 
     @classmethod
@@ -367,12 +329,8 @@ class ColdBootRemanenceEngine:
         has_mor: bool = False,
         has_tamper: bool = False,
         has_secure_boot: bool = False,
-        ram_type: str = "DDR4"
+        ram_type: str = "DDR4",
     ) -> SimulationReport:
-        """Run unified simulation, entropy calculation, and countermeasure assessment."""
-        import datetime
-        import uuid
-
         therm = cls.compute_thermal_profile(temperature_celsius, time_elapsed_seconds)
         entropy = cls.evaluate_key_reconstruction(master_key_bits, therm.expected_bit_error_rate)
         cm = cls.evaluate_countermeasures(
@@ -381,53 +339,48 @@ class ColdBootRemanenceEngine:
             has_power_reset_scrubbing=has_mor,
             has_chassis_tamper_sensor=has_tamper,
             has_secure_boot_lockdown=has_secure_boot,
-            ram_type=ram_type
+            ram_type=ram_type,
         )
-
-        sim_key = None
+        simulation = None
         if test_hex_key:
-            sim_key = cls.simulate_bitstream_decay(
+            simulation = cls.simulate_bitstream_decay(
                 original_hex_key=test_hex_key,
                 temperature_celsius=temperature_celsius,
-                time_elapsed_seconds=time_elapsed_seconds
+                time_elapsed_seconds=time_elapsed_seconds,
             )
-
         return SimulationReport(
             simulation_id=f"COLD-BOOT-{uuid.uuid4().hex[:8].upper()}",
-            timestamp_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            timestamp_utc=_datetime.datetime.now(_datetime.timezone.utc).isoformat(),
             thermal_profile=therm,
             entropy_metrics=entropy,
             countermeasure=cm,
-            synthetic_key_decay_results=sim_key
+            synthetic_key_decay_results=simulation,
         )
 
     @classmethod
     def evaluate_batch_csv(cls, csv_text: str) -> List[SimulationReport]:
-        """Process batch of parameter rows from CSV string."""
         reader = csv.DictReader(io.StringIO(csv_text))
-        reports = []
-        for row in reader:
-            temp = float(row.get("temperature_celsius", 25.0))
-            time_s = float(row.get("time_elapsed_seconds", 10.0))
-            key_bits = int(row.get("master_key_bits", 128))
-            hex_k = row.get("test_hex_key") or None
-            tresor = str(row.get("has_tresor", "false")).lower() in ["true", "1", "yes"]
-            tme = str(row.get("has_tme", "false")).lower() in ["true", "1", "yes"]
-            mor = str(row.get("has_mor", "false")).lower() in ["true", "1", "yes"]
-            tamper = str(row.get("has_tamper", "false")).lower() in ["true", "1", "yes"]
-            secboot = str(row.get("has_secure_boot", "false")).lower() in ["true", "1", "yes"]
-            ram = row.get("ram_type", "DDR4")
-
-            reports.append(cls.run_full_assessment(
-                temperature_celsius=temp,
-                time_elapsed_seconds=time_s,
-                master_key_bits=key_bits,
-                test_hex_key=hex_k,
-                has_tresor=tresor,
-                has_tme=tme,
-                has_mor=mor,
-                has_tamper=tamper,
-                has_secure_boot=secboot,
-                ram_type=ram
-            ))
+        if not reader.fieldnames:
+            raise ValueError("CSV input must include a header row")
+        reports: List[SimulationReport] = []
+        for row_number, row in enumerate(reader, start=2):
+            if not any((value or "").strip() for value in row.values() if isinstance(value, str)):
+                continue
+            try:
+                reports.append(
+                    cls.run_full_assessment(
+                        temperature_celsius=float(row.get("temperature_celsius") or 25.0),
+                        time_elapsed_seconds=float(row.get("time_elapsed_seconds") or 10.0),
+                        master_key_bits=int(row.get("master_key_bits") or 128),
+                        test_hex_key=(row.get("test_hex_key") or None),
+                        has_tresor=_parse_bool(row.get("has_tresor", False)),
+                        has_tme=_parse_bool(row.get("has_tme", False)),
+                        has_mor=_parse_bool(row.get("has_mor", False)),
+                        has_tamper=_parse_bool(row.get("has_tamper", False)),
+                        has_secure_boot=_parse_bool(row.get("has_secure_boot", False)),
+                        ram_type=row.get("ram_type") or "DDR4",
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"invalid CSV row {row_number}: {exc}") from exc
         return reports
